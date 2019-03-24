@@ -3,7 +3,6 @@ package art
 import (
 	"bytes"
 	"fmt"
-	"strings"
 )
 
 // dumper outputs a string representation of the ART for debugging.
@@ -37,6 +36,14 @@ type dumper struct {
 	root        *nodeHeader
 	buf         *bytes.Buffer
 	nChildStack []int
+	innerLeaf   bool
+}
+
+// Dump returns the human readable debug output of a radix node and it's
+// children recursively.
+func Dump(root *nodeHeader) string {
+	d := &dumper{root: root}
+	return d.String()
 }
 
 func (d *dumper) String() string {
@@ -45,19 +52,30 @@ func (d *dumper) String() string {
 	return d.buf.String()
 }
 
+func (d *dumper) isLastChild() bool {
+	if len(d.nChildStack) < 1 {
+		return true
+	}
+	return d.nChildStack[len(d.nChildStack)-1] == 1
+}
+
 func (d *dumper) padding() (string, string) {
 	depth := len(d.nChildStack)
 	if depth == 0 {
 		return "───", "   "
 	}
 	pad := "    "
-	pad += strings.Repeat("│  ", depth-1)
-
-	currentLevelChildrenLeft := d.nChildStack[len(d.nChildStack)-1]
+	for i := 0; i < depth-1; i++ {
+		if d.nChildStack[i] > 1 {
+			pad += "│   "
+		} else {
+			pad += "    "
+		}
+	}
 
 	head := "├──"
 	finalPad := "│  "
-	if currentLevelChildrenLeft == 1 {
+	if d.isLastChild() {
 		head = "└──"
 		finalPad = "   "
 	}
@@ -97,6 +115,47 @@ func (d *dumper) dumpIndexArray(a []byte, n int) {
 	d.buf.WriteRune(']')
 }
 
+func (d *dumper) dumpIndex48(a []byte) {
+	d.buf.WriteRune('{')
+	for i := 0; i < 256; i++ {
+		if a[i] > 0 {
+			fmt.Fprintf(d.buf, " %q:%d", byte(i), a[i]-1)
+		}
+	}
+	d.buf.WriteString(" }")
+}
+
+func (d *dumper) dumpInnerNode(pad string, n *innerNodeHeader) {
+	fmt.Fprintf(d.buf, "%s id:         %d\n", pad, n.id)
+	fmt.Fprintf(d.buf, "%s prefix(%d): %q\n", pad, n.prefixLen,
+		string(n.prefix[0:minU16(n.prefixLen, maxPrefixLen)]))
+	if n.leaf == nil {
+		fmt.Fprintf(d.buf, "%s innerLeaf:  nil\n", pad)
+	} else {
+		fmt.Fprintf(d.buf, "%s innerLeaf:\n", pad)
+		d.innerLeaf = true
+		d.pushNChildren(2) // make lines continue through the node
+		d.dumpNode(&n.leaf.nodeHeader)
+		d.popNChildren()
+		d.innerLeaf = false
+	}
+}
+
+func (d *dumper) dumpChildren(pad string, nChildren int, children []*nodeHeader) {
+	fmt.Fprintf(d.buf, "%s children: %v\n", pad, children)
+
+	d.pushNChildren(nChildren)
+
+	for _, child := range children[0:nChildren] {
+		if child != nil {
+			d.dumpNode(child)
+			d.decNChildren()
+		}
+	}
+
+	d.popNChildren()
+}
+
 func (d *dumper) dumpNode(n *nodeHeader) {
 	headerPad, pad := d.padding()
 
@@ -106,36 +165,40 @@ func (d *dumper) dumpNode(n *nodeHeader) {
 		leaf := n.leafNode()
 		fmt.Fprintf(d.buf, "%s Leaf (%p)\n", headerPad, leaf)
 		fmt.Fprintf(d.buf, "%s id:     %d\n", pad, n.id)
-		fmt.Fprintf(d.buf, "%s prefix: %q\n", pad, string(n.prefix[0:n.prefixLen]))
 		fmt.Fprintf(d.buf, "%s key:    %q\n", pad, leaf.key)
 		fmt.Fprintf(d.buf, "%s val:    %v\n", pad, leaf.value)
+		if !d.innerLeaf {
+			fmt.Fprintf(d.buf, "%s\n", pad)
+		}
+
 	case typNode4:
 		n4 := n.node4()
 		fmt.Fprintf(d.buf, "%s Node4 (%p)\n", headerPad, n4)
-		fmt.Fprintf(d.buf, "%s id:         %d\n", pad, n.id)
-		fmt.Fprintf(d.buf, "%s prefix:     %q\n", pad, string(n.prefix[0:n.prefixLen]))
-		fmt.Fprintf(d.buf, "%s nullIsLeaf: %v\n", pad, n.nullByteIsLeaf)
+		d.dumpInnerNode(pad, &n4.innerNodeHeader)
 		fmt.Fprintf(d.buf, "%s index:      ", pad)
-		d.dumpIndexArray(n4.index[:], int(n.nChildren))
+		d.dumpIndexArray(n4.index[:], int(n4.nChildren))
 		d.buf.WriteRune('\n')
-		fmt.Fprintf(d.buf, "%s children: %v\n", pad, n4.children[:])
-
-		d.pushNChildren(int(n.nChildren))
-
-		for _, child := range n4.children[0:n.nChildren] {
-			if child != nil {
-				d.dumpNode(child)
-				d.decNChildren()
-			}
-		}
-
-		d.popNChildren()
+		d.dumpChildren(pad, int(n4.nChildren), n4.children[:])
 
 	case typNode16:
+		n16 := n.node16()
+		fmt.Fprintf(d.buf, "%s Node16 (%p)\n", headerPad, n16)
+		d.dumpInnerNode(pad, &n16.innerNodeHeader)
+		fmt.Fprintf(d.buf, "%s index:      ", pad)
+		d.dumpIndexArray(n16.index[:], int(n16.nChildren))
+		d.buf.WriteRune('\n')
+		d.dumpChildren(pad, int(n16.nChildren), n16.children[:])
 
 	case typNode48:
+		n48 := n.node48()
+		fmt.Fprintf(d.buf, "%s Node48 (%p)\n", headerPad, n48)
+		d.dumpInnerNode(pad, &n48.innerNodeHeader)
+		fmt.Fprintf(d.buf, "%s index:      ", pad)
+		d.dumpIndex48(n48.index[:])
+		d.buf.WriteRune('\n')
+		d.dumpChildren(pad, int(n48.nChildren), n48.children[:])
 
 	case typNode256:
+		panic("not implemented")
 	}
-
 }

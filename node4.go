@@ -4,8 +4,7 @@ package art
 // to be sorted for search - we just iterate. We actually do keep it sorted just
 // because that makes growing into a node16 simpler and costs very little.
 type node4 struct {
-	h        nodeHeader
-	ih       innerNodeHeader
+	innerNodeHeader
 	index    [4]byte
 	children [4]*nodeHeader
 }
@@ -13,7 +12,7 @@ type node4 struct {
 // index returns the child index of the child with the next byte c. If there is
 // no such child, -1 is returned.
 func (n *node4) indexOf(c byte) int {
-	for i := 0; i < int(n.ih.nChildren); i++ {
+	for i := 0; i < int(n.nChildren); i++ {
 		if n.index[i] == c {
 			return i
 		}
@@ -21,8 +20,8 @@ func (n *node4) indexOf(c byte) int {
 	return -1
 }
 
-// childAt returns the child with the given next byte if any exists or nil.
-func (n *node4) childAt(c byte) *nodeHeader {
+// findChild returns the child with the given next byte if any exists or nil.
+func (n *node4) findChild(c byte) *nodeHeader {
 	if idx := n.indexOf(c); idx > -1 {
 		return n.children[idx]
 	}
@@ -34,50 +33,49 @@ func (n *node4) childAt(c byte) *nodeHeader {
 // with the same next byte. This MUST be ensured by the caller. Since the caller
 // always knows in practice it's cheaper not to check again here.
 func (n *node4) addChild(txn *Txn, c byte, child *nodeHeader) *nodeHeader {
-	if n.ih.nChildren < 4 {
+	if n.nChildren < 4 {
 		// Fast path, we have space so update in place
 		// Find the right place to insert
 		idx := 0
-		for i := 0; i < int(n.ih.nChildren); i++ {
+		for i := 0; i < int(n.nChildren); i++ {
 			if n.index[i] > c {
-				// Move larger keys up one we can't go off then end since we checked
-				// size above.
-				n.index[i+1] = n.index[i]
-			} else {
-				// Store the first index smaller than they byte
-				idx = i
+				break
 			}
+			// Current index byte is smaller than the target so target needs to go
+			// at least into the next slot
+			idx = i + 1
 		}
-		// Add the byte to the index in the right place now larger values are moved.
-		n.index[idx] = c
-		insertChild(n.children[0:n.ih.nChildren], child, idx)
-		n.ih.nChildren++
-		return &n.h
+		insertIndex(n.index[0:n.nChildren], c, idx)
+		insertChild(n.children[0:n.nChildren], child, idx)
+		n.nChildren++
+		return &n.nodeHeader
 	}
 
 	// Need to grow to a node16
 	n16 := txn.newNode16()
 
 	// Copy prefix
-	copyInnerNodeHeader(&n16.ih, &n.ih)
+	copyInnerNodeHeader(&n16.innerNodeHeader, &n.innerNodeHeader)
 
 	// Copy children
+	n16Idx := 0
+	inserted := false
 	for childIdx, childC := range n.index {
-		idx := int(n16.ih.nChildren)
-		if c < childC {
+		if !inserted && c < childC {
 			// Insert new child before the rest
-			n16.index[idx] = c
-			n16.children[idx] = child
-			n16.ih.nChildren++
-			idx++
+			n16.index[n16Idx] = c
+			n16.children[n16Idx] = child
+			n16Idx++
+			inserted = true
 		}
 		// Copy child
-		n16.index[idx] = childC
-		n16.children[idx] = n.children[childIdx]
-		n16.ih.nChildren++
+		n16.index[n16Idx] = childC
+		n16.children[n16Idx] = n.children[childIdx]
+		n16Idx++
 	}
+	n16.nChildren = uint16(n16Idx)
 
-	return &n16.h
+	return &n16.nodeHeader
 }
 
 // removeChild removes the child with given next byte. Other node types might
@@ -87,15 +85,15 @@ func (n *node4) removeChild(txn *Txn, c byte) *nodeHeader {
 	idx := n.indexOf(c)
 	if idx < 0 {
 		// Child doesn't exist
-		return &n.h
+		return &n.nodeHeader
 	}
 
 	// Remove index
-	removeByteIndex(n.index[0:n.ih.nChildren], idx)
-	removeChild(n.children[0:n.ih.nChildren], idx)
-	n.ih.nChildren--
+	removeByteIndex(n.index[0:n.nChildren], idx)
+	removeChild(n.children[0:n.nChildren], idx)
+	n.nChildren--
 
-	return &n.h
+	return &n.nodeHeader
 }
 
 // replaceChild replaces a child with a new node. It assumes the child is known
@@ -104,16 +102,16 @@ func (n *node4) replaceChild(txn *Txn, c byte, child *nodeHeader) *nodeHeader {
 	idx := n.indexOf(c)
 	if idx < 0 {
 		// Child doesn't exist, don't do anything, this shouldn't really happen...
-		return &n.h
+		return &n.nodeHeader
 	}
 	n.children[idx] = child
-	return &n.h
+	return &n.nodeHeader
 }
 
 // minChild returns the child node with the lowest key or nil if there are no
 // children.
 func (n *node4) minChild() *nodeHeader {
-	if n.ih.nChildren > 0 {
+	if n.nChildren > 0 {
 		return n.children[0]
 	}
 	return nil
@@ -122,8 +120,39 @@ func (n *node4) minChild() *nodeHeader {
 // maxChild returns the child node with the highest key or nil if there are no
 // children.
 func (n *node4) maxChild() *nodeHeader {
-	if n.ih.nChildren > 0 {
-		return n.children[n.ih.nChildren-1]
+	if n.nChildren > 0 {
+		return n.children[n.nChildren-1]
+	}
+	return nil
+}
+
+// lowerBound returns the child node with the lowest key that is at least as
+// large as the search key or nil if there are no keys with a next-byte equal or
+// higher than c.
+func (n *node4) lowerBound(c byte) *nodeHeader {
+	if n.nChildren == 0 {
+		return nil
+	}
+	for i := 0; i < int(n.nChildren); i++ {
+		if n.index[i] < c {
+			continue
+		}
+		return n.children[i]
+	}
+	return nil
+}
+
+// upperBound returns the child node with the lowest key that is strictly larger
+// than the search key or nil if there are no larger keys.
+func (n *node4) upperBound(c byte) *nodeHeader {
+	if n.nChildren == 0 {
+		return nil
+	}
+	for i := 0; i < int(n.nChildren); i++ {
+		if n.index[i] <= c {
+			continue
+		}
+		return n.children[i]
 	}
 	return nil
 }
@@ -132,9 +161,9 @@ func (n *node4) maxChild() *nodeHeader {
 // ID.
 func (n *node4) copy(txn *Txn) *nodeHeader {
 	nn := txn.newNode4()
-	copyNodeHeader(&nn.h, &n.h)
+	copyInnerNodeHeader(&nn.innerNodeHeader, &n.innerNodeHeader)
 	// Copy index and children
 	copy(nn.index[0:4], n.index[0:4])
 	copy(nn.children[0:4], n.children[0:4])
-	return &nn.h
+	return &nn.nodeHeader
 }

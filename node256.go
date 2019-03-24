@@ -3,8 +3,7 @@ package art
 // node256 is a radix node with >48 children. It has a full 256 byte pointer
 // array so lookup is constant time.
 type node256 struct {
-	h        nodeHeader
-	ih       innerNodeHeader
+	innerNodeHeader
 	children [256]*nodeHeader
 }
 
@@ -14,16 +13,16 @@ func (n *node256) indexOf(c byte) int {
 	return int(c)
 }
 
-// childAt returns the child with the given next byte if any exists or nil.
-func (n *node256) childAt(c byte) *nodeHeader {
+// findChild returns the child with the given next byte if any exists or nil.
+func (n *node256) findChild(c byte) *nodeHeader {
 	return n.children[c]
 }
 
 // addChild adds the child to the current node256 in place.
 func (n *node256) addChild(txn *Txn, c byte, child *nodeHeader) *nodeHeader {
 	n.children[c] = child
-	n.h.nChildren++
-	return &n.h
+	n.nChildren++
+	return &n.nodeHeader
 }
 
 // removeChild removes the child with given next byte. If the number of children
@@ -32,39 +31,39 @@ func (n *node256) removeChild(txn *Txn, c byte) *nodeHeader {
 	idx := n.indexOf(c)
 	if idx < 0 {
 		// Child doesn't exist
-		return &n.h
+		return &n.nodeHeader
 	}
 
-	if n.h.nChildren > 48 {
+	if n.nChildren > 48 {
 		// Remove in place.
 		n.children[c] = nil
-		n.h.nChildren--
+		n.nChildren--
 	}
 
 	// Convert to a node48
 	n48 := txn.newNode48()
 
 	// Copy prefix
-	n48.ih.prefixLen = n.ih.prefixLen
-	copy(n48.h.prefix[0:maxPrefixLen], n.h.prefix[0:maxPrefixLen])
+	n48.prefixLen = n.prefixLen
+	copy(n48.prefix[0:maxPrefixLen], n.prefix[0:maxPrefixLen])
 
 	// Copy children
 	for childC, child := range n.children {
 		if child != nil && childC != int(c) {
-			n48.index[childC] = n48.h.nChildren
-			n48.children[n48.h.nChildren] = child
-			n48.h.nChildren++
+			n48.index[childC] = byte(n48.nChildren)
+			n48.children[n48.nChildren] = child
+			n48.nChildren++
 		}
 	}
 
-	return &n48.h
+	return &n48.nodeHeader
 }
 
 // replaceChild replaces a child with a new node. It assumes the child is known
 // to exist and is a no-op if it doesn't.
 func (n *node256) replaceChild(txn *Txn, c byte, child *nodeHeader) *nodeHeader {
 	n.children[c] = child
-	return &n.h
+	return &n.nodeHeader
 }
 
 // minChild returns the child node with the lowest key or nil if there are no
@@ -91,12 +90,31 @@ func (n *node256) maxChild() *nodeHeader {
 	return nil
 }
 
+// lowerBound returns the child node with the lowest key that is at least as
+// large as the search key or nil if there are no keys with a next-byte equal or
+// higher than c.
+func (n *node256) lowerBound(c byte) *nodeHeader {
+	if n.nChildren == 0 {
+		return nil
+	}
+	return nil
+}
+
+// upperBound returns the child node with the lowest key that is strictly larger
+// than the search key or nil if there are no larger keys.
+func (n *node256) upperBound(c byte) *nodeHeader {
+	if n.nChildren == 0 {
+		return nil
+	}
+	return nil
+}
+
 // copy returns a new copy of the current node with the same contents but a new
 // ID.
 func (n *node256) copy(txn *Txn) *nodeHeader {
 	nn := txn.newNode256()
-	copyNodeHeader(&nn.h, &n.h)
+	copyInnerNodeHeader(&nn.innerNodeHeader, &n.innerNodeHeader)
 	// Copy index and children
 	copy(nn.children[0:256], n.children[0:256])
-	return &nn.h
+	return &nn.nodeHeader
 }

@@ -44,7 +44,7 @@ func (n *nodeHeader) mergeUpdates(snapMaxID uint64, un *nodeHeader,
 		}
 	}
 
-	switch {
+	switch n.typ {
 
 	// Both have the same prefix (commonPrefix is the whole of both prefixes).
 	// We need to merge the edges recursively.
@@ -59,7 +59,7 @@ func (n *nodeHeader) mergeUpdates(snapMaxID uint64, un *nodeHeader,
 		for i := byte(0); i <= 255; i++ {
 			foundInN := n.indexOf(i) > -1
 			foundInUN := un.indexOf(i) > -1
-			switch {
+			switch n.typ {
 			case foundInN && foundInUN:
 				// Found in both, merge
 				copyNode()
@@ -75,7 +75,7 @@ func (n *nodeHeader) mergeUpdates(snapMaxID uint64, un *nodeHeader,
 				copyNode()
 				newNode.addChild(i, un.childAt(i))
 
-			default:
+		case typNode256:
 				// Neither has it, just carry on the loop!
 			}
 		}
@@ -119,11 +119,11 @@ func (n *nodeHeader) mergeUpdates(snapMaxID uint64, un *nodeHeader,
 
 	// Both nodes have a non-zero common prefix but neither is a full prefix of
 	// the other. Create a new parent with that prefix and insert both children.
-	default:
+case typNode256:
 		newParent := newNode4()
 		// Give parent the common prefix
-		newParent.ih.prefixLen = commonPfx
-		copy(newParent.h.prefix[0:commonPfx], n.prefix[0:commonPfx])
+		newParent.prefixLen = commonPfx
+		copy(newParent.prefix[0:commonPfx], n.prefix[0:commonPfx])
 
 		// Copy this node to remove it's prefix
 		copyNode()
