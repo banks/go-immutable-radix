@@ -23,7 +23,7 @@ func assertLeafKey(t *testing.T, n *nodeHeader, key string) {
 	if key == "" {
 		require.Nil(t, n)
 	} else {
-		require.NotNil(t, n)
+		require.NotNilf(t, n, "for key %q", key)
 		require.Equal(t, typLeaf, n.typ)
 		leaf := n.leafNode()
 		require.Equal(t, key, string(leaf.key))

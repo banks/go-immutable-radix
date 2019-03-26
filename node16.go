@@ -87,6 +87,7 @@ func (n *node16) removeChild(txn *Txn, c byte) *nodeHeader {
 		removeByteIndex(n.index[0:n.nChildren], idx)
 		removeChild(n.children[0:n.nChildren], idx)
 		n.nChildren--
+		return &n.nodeHeader
 	}
 
 	// Convert to a node4
@@ -94,10 +95,10 @@ func (n *node16) removeChild(txn *Txn, c byte) *nodeHeader {
 
 	// Copy prefix
 	n4.prefixLen = n.prefixLen
-	copy(n4.prefix[0:maxPrefixLen], n.prefix[0:maxPrefixLen])
+	copy(n4.prefix[:], n.prefix[:])
 
 	// Copy children
-	for childIdx, childC := range n.index {
+	for childIdx, childC := range n.index[0:n.nChildren] {
 		if childC == c {
 			continue
 		}
@@ -146,6 +147,12 @@ func (n *node16) lowerBound(c byte) *nodeHeader {
 	if n.nChildren == 0 {
 		return nil
 	}
+	for i := 0; i < int(n.nChildren); i++ {
+		if n.index[i] < c {
+			continue
+		}
+		return n.children[i]
+	}
 	return nil
 }
 
@@ -154,6 +161,12 @@ func (n *node16) lowerBound(c byte) *nodeHeader {
 func (n *node16) upperBound(c byte) *nodeHeader {
 	if n.nChildren == 0 {
 		return nil
+	}
+	for i := 0; i < int(n.nChildren); i++ {
+		if n.index[i] <= c {
+			continue
+		}
+		return n.children[i]
 	}
 	return nil
 }
