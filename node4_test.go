@@ -292,40 +292,36 @@ func TestNode4MinMaxChild(t *testing.T) {
 	}
 }
 
-func TestNode4LowerUpperBound(t *testing.T) {
+func TestNode4LowerBound(t *testing.T) {
 	tests := []struct {
-		name                 string
-		children             []string
-		key                  string
-		wantLower, wantUpper string
+		name      string
+		children  []string
+		key       string
+		wantLower string
 	}{
 		{
 			name:      "empty",
 			children:  []string{},
 			key:       "foo",
 			wantLower: "",
-			wantUpper: "",
 		},
 		{
 			name:      "full, match",
 			children:  []string{"foo", "bar", "\x00\x00\x00", "\xff\xff\xff"},
 			key:       "foo",
 			wantLower: "foo",
-			wantUpper: "\xff\xff\xff",
 		},
 		{
 			name:      "full, no match",
 			children:  []string{"foo", "bar", "\x00\x00\x00", "\xff\xff\xff"},
 			key:       "baa",
 			wantLower: "bar",
-			wantUpper: "foo",
 		},
 		{
 			name:      "full, same lower upper",
 			children:  []string{"foo", "bar", "\x00\x00\x00", "\xff\xff\xff"},
 			key:       "car",
 			wantLower: "foo",
-			wantUpper: "foo",
 		},
 	}
 	for _, tt := range tests {
@@ -339,9 +335,6 @@ func TestNode4LowerUpperBound(t *testing.T) {
 
 			gotLower := n.lowerBound(tt.key[0])
 			assertLeafKey(t, gotLower, tt.wantLower)
-
-			gotUpper := n.upperBound(tt.key[0])
-			assertLeafKey(t, gotUpper, tt.wantUpper)
 		})
 	}
 }

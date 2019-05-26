@@ -7,7 +7,6 @@ import (
 	"unsafe"
 
 	"github.com/stretchr/testify/require"
-	"github.com/y0ssar1an/q"
 )
 
 // allTheBytes is a random permutation of all single byte values The first four
@@ -124,7 +123,6 @@ func TestNode16FindChild(t *testing.T) {
 			copy(n.index[:], testSortBytes(tt.index))
 			testSortChildren(tt.children)
 			copy(n.children[:], tt.children)
-			q.Q(n)
 			assertChildHasLeaf(t, &n.nodeHeader, tt.c, tt.wantKey)
 		})
 	}
@@ -147,7 +145,7 @@ func TestNode16AddRemoveChild(t *testing.T) {
 	// Add children up to 16
 	for i, child := range children[0:16] {
 		nh := n.addChild(txn, allTheBytes[i], child)
-		// Should not have replace the node typ
+		// Should not have replaced the node typ
 		require.Equal(typNode16, nh.typ)
 		gotN := nh.node16()
 		require.Exactly(gotN, n)
@@ -174,7 +172,7 @@ func TestNode16AddRemoveChild(t *testing.T) {
 	// Remove from the node16 (remove from node48 tested elsewhere)
 	for i := range children[0:16] {
 		nh := n16h.removeChild(txn, allTheBytes[i])
-		// Should not have replace the node typ
+		// Should not have replaced the node typ
 		require.Equal(typNode16, nh.typ)
 		gotN := nh.node16()
 		require.Exactly(gotN, n)
@@ -259,42 +257,38 @@ func TestNode16MinMaxChild(t *testing.T) {
 	}
 }
 
-func TestNode16LowerUpperBound(t *testing.T) {
+func TestNode16LowerBound(t *testing.T) {
 	txn := &Txn{}
 
 	tests := []struct {
-		name                 string
-		children             []*nodeHeader
-		key                  string
-		wantLower, wantUpper string
+		name      string
+		children  []*nodeHeader
+		key       string
+		wantLower string
 	}{
 		{
 			name:      "empty",
 			children:  []*nodeHeader{},
 			key:       "foo",
 			wantLower: "",
-			wantUpper: "",
 		},
 		{
 			name:      "full, match",
 			children:  testMakeChildLeaves(t, txn, 16),
 			key:       "aaa",
 			wantLower: "aaa",
-			wantUpper: "}}}",
 		},
 		{
 			name:      "full, no match",
 			children:  testMakeChildLeaves(t, txn, 16),
 			key:       "aa",
 			wantLower: "aaa",
-			wantUpper: "}}}",
 		},
 		{
 			name:      "full, same lower upper",
 			children:  testMakeChildLeaves(t, txn, 16),
 			key:       "YYY",
 			wantLower: "ZZZ",
-			wantUpper: "ZZZ",
 		},
 	}
 	for _, tt := range tests {
@@ -307,9 +301,6 @@ func TestNode16LowerUpperBound(t *testing.T) {
 
 			gotLower := n.lowerBound(tt.key[0])
 			assertLeafKey(t, gotLower, tt.wantLower)
-
-			gotUpper := n.upperBound(tt.key[0])
-			assertLeafKey(t, gotUpper, tt.wantUpper)
 		})
 	}
 }

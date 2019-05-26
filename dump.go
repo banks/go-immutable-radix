@@ -118,8 +118,18 @@ func (d *dumper) dumpIndexArray(a []byte, n int) {
 func (d *dumper) dumpIndex48(a []byte) {
 	d.buf.WriteRune('{')
 	for i := 0; i < 256; i++ {
-		if a[i] > 0 {
+		if a[i] != 0x0 {
 			fmt.Fprintf(d.buf, " %q:%d", byte(i), a[i]-1)
+		}
+	}
+	d.buf.WriteString(" }")
+}
+
+func (d *dumper) dumpIndex256(a []*nodeHeader) {
+	d.buf.WriteRune('{')
+	for i := 0; i < 256; i++ {
+		if a[i] != nil {
+			fmt.Fprintf(d.buf, " %q", byte(i))
 		}
 	}
 	d.buf.WriteString(" }")
@@ -199,6 +209,12 @@ func (d *dumper) dumpNode(n *nodeHeader) {
 		d.dumpChildren(pad, int(n48.nChildren), n48.children[:])
 
 	case typNode256:
-		panic("not implemented")
+		n256 := n.node256()
+		fmt.Fprintf(d.buf, "%s Node256 (%p)\n", headerPad, n256)
+		d.dumpInnerNode(pad, &n256.innerNodeHeader)
+		fmt.Fprintf(d.buf, "%s index:      ", pad)
+		d.dumpIndex256(n256.children[:])
+		d.buf.WriteRune('\n')
+		d.dumpChildren(pad, 256, n256.children[:])
 	}
 }

@@ -38,6 +38,7 @@ func (n *node256) removeChild(txn *Txn, c byte) *nodeHeader {
 		// Remove in place.
 		n.children[c] = nil
 		n.nChildren--
+		return &n.nodeHeader
 	}
 
 	// Convert to a node48
@@ -45,12 +46,12 @@ func (n *node256) removeChild(txn *Txn, c byte) *nodeHeader {
 
 	// Copy prefix
 	n48.prefixLen = n.prefixLen
-	copy(n48.prefix[0:maxPrefixLen], n.prefix[0:maxPrefixLen])
+	copy(n48.prefix[:], n.prefix[:])
 
 	// Copy children
 	for childC, child := range n.children {
 		if child != nil && childC != int(c) {
-			n48.index[childC] = byte(n48.nChildren)
+			n48.index[childC] = byte(n48.nChildren + 1)
 			n48.children[n48.nChildren] = child
 			n48.nChildren++
 		}
@@ -94,15 +95,6 @@ func (n *node256) maxChild() *nodeHeader {
 // large as the search key or nil if there are no keys with a next-byte equal or
 // higher than c.
 func (n *node256) lowerBound(c byte) *nodeHeader {
-	if n.nChildren == 0 {
-		return nil
-	}
-	return nil
-}
-
-// upperBound returns the child node with the lowest key that is strictly larger
-// than the search key or nil if there are no larger keys.
-func (n *node256) upperBound(c byte) *nodeHeader {
 	if n.nChildren == 0 {
 		return nil
 	}

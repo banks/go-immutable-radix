@@ -156,21 +156,6 @@ func (n *node16) lowerBound(c byte) *nodeHeader {
 	return nil
 }
 
-// upperBound returns the child node with the lowest key that is strictly larger
-// than the search key or nil if there are no larger keys.
-func (n *node16) upperBound(c byte) *nodeHeader {
-	if n.nChildren == 0 {
-		return nil
-	}
-	for i := 0; i < int(n.nChildren); i++ {
-		if n.index[i] <= c {
-			continue
-		}
-		return n.children[i]
-	}
-	return nil
-}
-
 // copy returns a new copy of the current node with the same contents but a new
 // ID.
 func (n *node16) copy(txn *Txn) *nodeHeader {

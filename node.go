@@ -328,29 +328,6 @@ func (n *nodeHeader) lowerBound(c byte) *nodeHeader {
 	panic("invalid type")
 }
 
-// upperBound returns the child node with the lowest key that is strictly larger
-// than the search key or nil if there are no larger keys.
-func (n *nodeHeader) upperBound(c byte) *nodeHeader {
-	switch n.typ {
-	case typLeaf:
-		// Leaves have no children
-		return nil
-
-	case typNode4:
-		return n.node4().upperBound(c)
-
-	case typNode16:
-		return n.node16().upperBound(c)
-
-	case typNode48:
-		return n.node48().upperBound(c)
-
-	case typNode256:
-		return n.node256().upperBound(c)
-	}
-	panic("invalid type")
-}
-
 // copy returns a new copy of the current node with the same contents but a new
 // ID.
 func (n *nodeHeader) copy(txn *Txn) *nodeHeader {

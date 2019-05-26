@@ -44,7 +44,7 @@ func (n *node48) addChild(txn *Txn, c byte, child *nodeHeader) *nodeHeader {
 
 	// Copy prefix
 	n256.prefixLen = n.prefixLen
-	copy(n256.prefix[0:maxPrefixLen], n.prefix[0:maxPrefixLen])
+	copy(n256.prefix[:], n.prefix[:])
 
 	// Copy children
 	for childC, offset := range n.index {
@@ -69,17 +69,22 @@ func (n *node48) removeChild(txn *Txn, c byte) *nodeHeader {
 		return &n.nodeHeader
 	}
 
-	if n.nChildren > 16 {
+	if n.nChildren > (16 + 1) {
 		// Remove in place. First rewrite the index to remove the edge and shuffle
 		// all children with higher offset down one.
+		oldIdx := n.index[c]
 		n.index[c] = 0
-		for i := byte(0); i <= 255; i++ {
-			if n.index[i] > byte(idx)+1 {
+		// Note the int cast is needed - if i is a byte then the last i++ wraps
+		// around to 0 and makes it an infinite loop.
+		for i := int(0); i < 256; i++ {
+			// Only move if it was after the removed child in the array
+			if n.index[i] > oldIdx {
 				n.index[i]--
 			}
 		}
 		removeChild(n.children[0:n.nChildren], idx)
 		n.nChildren--
+		return &n.nodeHeader
 	}
 
 	// Convert to a node16
@@ -87,7 +92,7 @@ func (n *node48) removeChild(txn *Txn, c byte) *nodeHeader {
 
 	// Copy prefix
 	n16.prefixLen = n.prefixLen
-	copy(n16.prefix[0:maxPrefixLen], n.prefix[0:maxPrefixLen])
+	copy(n16.prefix[:], n.prefix[:])
 
 	// Copy children
 	for childC, offset := range n.index {
@@ -143,14 +148,11 @@ func (n *node48) lowerBound(c byte) *nodeHeader {
 	if n.nChildren == 0 {
 		return nil
 	}
-	return nil
-}
-
-// upperBound returns the child node with the lowest key that is strictly larger
-// than the search key or nil if there are no larger keys.
-func (n *node48) upperBound(c byte) *nodeHeader {
-	if n.nChildren == 0 {
-		return nil
+	// Iterate from the key offset until we find a child
+	for _, offset := range n.index[c:] {
+		if offset > 0 {
+			return n.children[offset-1]
+		}
 	}
 	return nil
 }
